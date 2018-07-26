@@ -4,6 +4,7 @@ import co.paralleluniverse.fibers.Suspendable
 import net.corda.core.flows.FlowLogic
 import net.corda.core.flows.InitiatingFlow
 import net.corda.core.flows.SendTransactionFlow
+import net.corda.core.identity.Party
 import net.corda.core.node.services.Vault
 import net.corda.core.node.services.queryBy
 import net.corda.core.node.services.vault.QueryCriteria
@@ -12,7 +13,7 @@ import net.corda.groups.contracts.Group
 import java.security.PublicKey
 
 @InitiatingFlow
-class SendDataToGroup(val key: PublicKey, val transaction: SignedTransaction) : FlowLogic<Unit>() {
+class SendDataToGroup(val key: PublicKey, val transaction: SignedTransaction, val sender: Party? = null) : FlowLogic<Unit>() {
     @Suspendable
     override fun call() {
         // Grab all the group states.
@@ -26,13 +27,25 @@ class SendDataToGroup(val key: PublicKey, val transaction: SignedTransaction) : 
 
         // Neighbours are the union of all participants
         // across all group states with the specified key.
-        val groupNeighbours = participantsForGroup - ourIdentity
+        val groupNeighbours = if (sender != null) {
+            participantsForGroup - ourIdentity - sender
+        } else {
+            participantsForGroup - ourIdentity
+        }
+
+        if (groupNeighbours.isEmpty()) {
+            logger.info("No more parties to send to.")
+            return
+        }
+
+        logger.info("Sending transaction ${transaction.id} to parties $groupNeighbours in group $key.")
 
         // Create sessions for each neighbour.
         // Send all the transactions to each party.
         groupNeighbours.forEach { party ->
             val session = initiateFlow(party)
             // Send the group key so the recipient knows which signature to check.
+            logger.info("Sending transaction ${transaction.id} to party $party in group $key.")
             session.send(key)
             subFlow(SendTransactionFlow(session, transaction))
         }

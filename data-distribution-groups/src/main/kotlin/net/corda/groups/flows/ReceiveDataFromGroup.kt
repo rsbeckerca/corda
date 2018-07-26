@@ -14,15 +14,18 @@ class ReceiveDataFromGroup(val otherSession: FlowSession) : FlowLogic<Unit>() {
     @Suspendable
     override fun call() {
         // Receive the group key and transaction.
+        val counterparty = otherSession.counterparty
         val groupKey = otherSession.receive<PublicKey>().unwrap { it }
         // TODO: Re-write to use custom logic as need to check tx should be in group before storing.
         val tx = subFlow(ReceiveTransactionFlow(otherSession, true, StatesToRecord.ALL_VISIBLE))
+
+        logger.info("Received transaction ${tx.id} from party $counterparty in group $groupKey.")
 
         // Verify the group signature.
         val groupKeyAndSignature = tx.sigs.single { it.by == groupKey }
         groupKeyAndSignature.verify(tx.id)
 
         // Send to group neighbours.
-        subFlow(SendDataToGroup(groupKey, tx))
+        subFlow(SendDataToGroup(groupKey, tx, otherSession.counterparty))
     }
 }

@@ -7,23 +7,28 @@ import net.corda.core.transactions.SignedTransaction
 import net.corda.core.transactions.TransactionBuilder
 import net.corda.core.utilities.unwrap
 import net.corda.groups.contracts.Group
+import net.corda.groups.utilities.getGroupByKey
+import java.security.PublicKey
 
 class InviteToGroup {
     @InitiatingFlow
-    class Initiator(val groupDetails: Group.Details, val invitee: Party) : FlowLogic<SignedTransaction>() {
+    class Initiator(val key: PublicKey, val invitee: Party) : FlowLogic<SignedTransaction>() {
         @Suspendable
         override fun call(): SignedTransaction {
-            // Get the certificate for this groupDetails and send it to the invitee withe the details.
-            val cert = serviceHub.identityService.certificateFromKey(groupDetails.key)
-                    ?: throw IllegalArgumentException("There is no groupDetails for public key ${groupDetails.key}.")
+            // Get the certificate for this key and send it to the invitee withe the details.
+            val cert = serviceHub.identityService.certificateFromKey(key)
+                    ?: throw IllegalArgumentException("There is no cert for public key $key.")
+            val group = getGroupByKey(key, serviceHub)
+                    ?: throw IllegalArgumentException("There is no group for public key $key.")
+            val groupDetails = group.state.data.details
             val detailsWithCert = Group.DetailsWithCert(groupDetails, cert)
 
             // Start a new session.
-            // Send the new groupDetails details to the invitee.
+            // Send the new key details to the invitee.
             val session = initiateFlow(invitee)
             session.send(detailsWithCert)
 
-            // Check the new groupDetails state is what we expect.
+            // Check the new key state is what we expect.
             return subFlow(object : SignTransactionFlow(session) {
                 override fun checkTransaction(stx: SignedTransaction) {
                     val newGroup = stx.tx.outputsOfType<Group.State>().single()
@@ -43,7 +48,7 @@ class InviteToGroup {
             val detailsWithCert = otherSession.receive<Group.DetailsWithCert>().unwrap { it }
             serviceHub.identityService.verifyAndRegisterIdentity(detailsWithCert.cert)
 
-            // Create a transaction to add this groupDetails to our store.
+            // Create a transaction to add this key to our store.
             // We require the inviter's signature.
             val notary = serviceHub.networkMapCache.notaryIdentities.first()
 
