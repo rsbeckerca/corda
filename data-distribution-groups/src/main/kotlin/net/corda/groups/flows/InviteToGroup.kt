@@ -30,6 +30,8 @@ class InviteToGroup {
                     check(newGroup.details == groupDetails) { "Group details are different." }
                 }
             })
+
+            // TODO: Send all previous transactions added to the group.
         }
     }
 
